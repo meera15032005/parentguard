@@ -40,6 +40,36 @@ jobs:
           echo "android.useAndroidX=true" >> project/gradle.properties
           echo "android.enableJetifier=true" >> project/gradle.properties
 
+      - name: Set Java 17 for Android modules
+        run: |
+          cat >> project/parent/build.gradle.kts <<'EOF'
+
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions.jvmTarget = "17"
+          }
+          EOF
+
+          cat >> project/child/build.gradle.kts <<'EOF'
+
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions.jvmTarget = "17"
+          }
+          EOF
+
       - name: Build Parent APK
         working-directory: project
         run: gradle :parent:assembleDebug
