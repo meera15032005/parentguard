@@ -26,7 +26,7 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
@@ -35,52 +35,68 @@ jobs:
         with:
           gradle-version: '8.10'
 
-      - name: Configure Android project
+      - name: Fix Kotlin and Compose compatibility
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           root = Path("project")
 
-          # Enable AndroidX and Jetifier
+          # Use Kotlin 1.9.25 for compatibility with the
+          # Compose setup in this starter project.
+          gradle = root / "build.gradle.kts"
+          text = gradle.read_text()
+          text = text.replace(
+              'org.jetbrains.kotlin.android") version "2.0.21"',
+              'org.jetbrains.kotlin.android") version "1.9.25"'
+          )
+          gradle.write_text(text)
+
+          # AndroidX
           props = root / "gradle.properties"
-          existing = props.read_text() if props.exists() else ""
+          old = props.read_text() if props.exists() else ""
 
-          if "android.useAndroidX=true" not in existing:
-              existing += "\nandroid.useAndroidX=true\n"
+          if "android.useAndroidX=true" not in old:
+              old += "\nandroid.useAndroidX=true\n"
 
-          if "android.enableJetifier=true" not in existing:
-              existing += "android.enableJetifier=true\n"
+          if "android.enableJetifier=true" not in old:
+              old += "android.enableJetifier=true\n"
 
-          props.write_text(existing)
+          props.write_text(old)
 
-          # Configure Java/Kotlin 17 for both Android modules
+          # Configure both modules for Java/Kotlin 17
           for module in ["parent", "child"]:
-              file = root / module / "build.gradle.kts"
-              text = file.read_text()
+              f = root / module / "build.gradle.kts"
+              s = f.read_text()
 
-              if "compileOptions" not in text:
-                  text += """
+              if "sourceCompatibility" not in s:
+                  s += """
 
           android {
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
+
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.15"
+              }
           }
           """
 
-              if "kotlinOptions.jvmTarget" not in text:
-                  text += """
+              if "jvmTarget = \"17\"" not in s:
+                  s += """
 
           tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-              kotlinOptions.jvmTarget = "17"
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
           }
           """
 
-              file.write_text(text)
+              f.write_text(s)
 
-          print("AndroidX, Java 17 and Kotlin 17 configured.")
+          print("Kotlin 1.9.25 + Compose 1.5.15 configured.")
           PY
 
       - name: Build Parent APK
@@ -91,13 +107,13 @@ jobs:
         working-directory: project
         run: gradle :child:assembleDebug
 
-      - name: Check generated APKs
+      - name: Check APK files
         run: |
-          echo "Parent APK:"
-          find project/parent/build/outputs/apk -type f -name "*.apk" -print
+          echo "=== Parent APK ==="
+          find project/parent/build/outputs/apk -name "*.apk" -print
 
-          echo "Child APK:"
-          find project/child/build/outputs/apk -type f -name "*.apk" -print
+          echo "=== Child APK ==="
+          find project/child/build/outputs/apk -name "*.apk" -print
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
