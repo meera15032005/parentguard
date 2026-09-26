@@ -41,51 +41,8 @@ jobs:
           from pathlib import Path
 
           root = Path("project")
-          root_gradle = root / "build.gradle.kts"
 
-          # Add Compose compiler plugin to root build file
-          text = root_gradle.read_text()
-
-          compose_plugin = '    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false'
-
-          if "org.jetbrains.kotlin.plugin.compose" not in text:
-              marker = '    id("org.jetbrains.kotlin.android") version "2.0.21" apply false'
-              text = text.replace(marker, marker + "\n" + compose_plugin)
-
-          root_gradle.write_text(text)
-
-          # Configure both Android modules
-          for module in ["parent", "child"]:
-              file = root / module / "build.gradle.kts"
-              text = file.read_text()
-
-              # Apply Compose compiler plugin
-              if "org.jetbrains.kotlin.plugin.compose" not in text:
-                  marker = '    id("org.jetbrains.kotlin.android")'
-                  text = text.replace(
-                      marker,
-                      marker + '\n    id("org.jetbrains.kotlin.plugin.compose")'
-                  )
-
-              # Java/Kotlin 17
-              if "sourceCompatibility = JavaVersion.VERSION_17" not in text:
-                  text += '''
-
-          android {
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-          }
-
-          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-              kotlinOptions.jvmTarget = "17"
-          }
-          '''
-
-              file.write_text(text)
-
-          # AndroidX
+          # Enable AndroidX and Jetifier
           props = root / "gradle.properties"
           existing = props.read_text() if props.exists() else ""
 
@@ -97,7 +54,33 @@ jobs:
 
           props.write_text(existing)
 
-          print("AndroidX, Java 17 and Compose compiler configured.")
+          # Configure Java/Kotlin 17 for both Android modules
+          for module in ["parent", "child"]:
+              file = root / module / "build.gradle.kts"
+              text = file.read_text()
+
+              if "compileOptions" not in text:
+                  text += """
+
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+          """
+
+              if "kotlinOptions.jvmTarget" not in text:
+                  text += """
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions.jvmTarget = "17"
+          }
+          """
+
+              file.write_text(text)
+
+          print("AndroidX, Java 17 and Kotlin 17 configured.")
           PY
 
       - name: Build Parent APK
@@ -106,4 +89,21 @@ jobs:
 
       - name: Build Child APK
         working-directory: project
-        run:
+        run: gradle :child:assembleDebug
+
+      - name: Check generated APKs
+        run: |
+          echo "Parent APK:"
+          find project/parent/build/outputs/apk -type f -name "*.apk" -print
+
+          echo "Child APK:"
+          find project/child/build/outputs/apk -type f -name "*.apk" -print
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ParentGuard-APKs
+          path: |
+            project/parent/build/outputs/apk/debug/*.apk
+            project/child/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
